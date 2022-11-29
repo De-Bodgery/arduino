@@ -1,0 +1,403 @@
+Eltek programming:
+
+CANBUS speed: 125 kbps and 29 bits
+
+Stand alone mode:
+Message every 2 seconds: 32 (can bus ID) 27 20 20 113 17 8 32 0
+Message every 15 seconds: 0 (can bus ID) 20 20 113 17 8 32 5 0
+
+The second message looks a lot like the first but shifted 1 byte.
+
+When I put a load on the PSU (4 lightbulbs 12V 21W, measured at 1.90 A) the last number of the first line reads 12 instead of 0 and to me that looks like the current draw. Roughly calculating that 12 out of 255 (8 bits) equals a range of 0-40A. The second message however doesn't change at all.
+
+At 1.90 Amps the message every 2 seconds: 32 (can bus ID) 27 20 20 113 17 8 32 12
+and every 15 seconds: 0 (can bus ID) 20 20 113 17 8 32 5 0
+
+What you got is the serial number of your device. Just read it in hexa.
+You receive 8 bytes. The 6 first are the serial number. The 2 last always 00.
+
+To go further you have to log each device on the can bus.
+To do such a thing you nead it serial number and you have to give him a ID = a number between 01 and 96.
+
+For exemple:
+in stand alone I get 29 bits 05 02 44 00 and 8 bytes 15 16 17 18 19 20 00 00
+
+02 is the ID number (between 01 and 96) 01 is the factory default. 151617181920 the device serial number.
+
+To go in logged mode send for exemple
+the 29 bits 05 00 48 08 and 8 bytes with the serial number 15 16 17 18 19 20 00 00 (Edit I remove the right 00 in the header.)
+48 08 is for ID=02 (48 0C ID=3, 48 10 ID=4 ...)
+
+Then you receive a rectifier status message:
+29 bits 05 02 40 04 and 8 bytes 1A 00 00 EB 14 E8 00 1C
+The 04 in the 29 bits say : disabled (I don't connect the output wires). 00 would be Normal
+1A = intake temp in °C
+00 00 Is the output amperage in deci Amp
+14 EB (invert the 2 bytes) is the output voltage in centi volts
+00 E8 is the input voltage in volts
+1C is the out air temp in °C.
+
+After connecting à battery with a voltage close to the default output (53.5v) I received:
+
+29 bits 05 02 40 00 and 8 bytes 19 31 00 F0 14 E7 00 19
+that is
+19 = 25°C
+00 31 (you have to invert 31 and 00) is 4.9 A DC, deci amp
+14 F0 = 53.60v, centi volts DC
+00 E7 = 231v volts AC
+
+Be carefull to never send a 9 in place of the 4 just after the Id. This is for permanent changes (that don't work for my device...) Always send a 4 in all commands:
+
+05004804 <- the 4 is in red color
+
+
+
+You can now change temporally the output voltage.
+
+You need been loging first
+then
+send 05 FF 40 04 header and 8 bytes FF FF LL MM LL MM LL MM
+
+LL MM is your voltage in volts *100 same codding as previously (LSB left MSB right) For exemple FE 10 = 43.50v
+
+This is a brodcast to all rectifiers on the can bus.
+You need to send it 10th /second.
+
+It work fine on my rectifier. You can even use this to adjust the amperage. If it is close the battery voltage, the amperage is reduced.
+
+
+
+
+Here's a list of the requested output voltages (from 11 00 to 18 00), returned is the output voltage as reported by the charger and measured is the voltage (with no load) as measured with a multimeter.
+
+// 00 10 should be 40.96 returned is 43.8 measured is 44.0
+// 00 11 should be 43.52 returned is 43.7 measured is 43.6
+// 00 12 should be 46.08 returned is 46.2 measured is 46.1
+// 00 13 should be 48.64 returned is 48.8 measured is 48.7
+// 00 14 should be 51.20 returned is 51.3 measured is 51.2
+// 00 15 should be 53.76 returned is 53.8 measured is 53.8
+// 00 16 should be 56.32 returned is 56.4 measured is 56.4
+// 80 16 should be 57.60 returned is 57.0 measured is 56.9
+// 00 17 should be 58.88 returned is 57.7 measured is 57.6
+// 00 18 should be 61.44 returned is 57.7 measured is 57.6
+
+The datasheet says the output voltage can be adjusted between 43.5 and 57.6 Volt and the list shows that as well. When going lower than 43.5 the output voltage stays at 43.5 and when going higher the voltage stays around 57.5 Volts
+
+You only have to send the message with the new voltage once, but after that you have to keep requesting the status to keep being 'logged in', otherwise indeed the charger will default to 53.5 Volts after a few seconds.
+
+If you stop sending your rectifier will be logged off and voltage will go back to 53.50V
+
+
+
+
+String for voltage setting : "send 05 FF 40 04 header and 8 bytes AA BB CC DD EE FF GG HH"
+
+Where :
+BBAA (in HEX!) is the maximum current setting (I have set it at A2 01 for 41.8 Amps (1820 Watts divided by 43.5 Volt which is the lowest voltage setting)
+DDCC (in HEX!) is the system voltage measurement (no idea what it really does but i have set this the same as th e output voltage setting so 80 16)
+FFEE (in HEX!) is the output voltage in centivolts (0.01V) (I have set this at 80 16 for 57.6 Volt which is the highest voltage setting)
+HHGG (in HEX!) is the overvoltage protection setting (I have set this at 3E 17 for 59.5 Volts)
+
+So the complete string for setting the maximum voltage (57.6V) and maximum current is : 05 FF 40 04 header and 8 bytes A2 01 80 16 80 16 3E 17
+
+
+
+
+
+I have several rectifiers and have permanently changed their default voltage. :lol:
+
+To do this you have to:
+-log your device as already explained
+-send then only one command.
+This is the command with an example:
+header 05 01 9C 00
+data length 5
+29 15 00 FE 10
+
+01=Rectifier Number 01
+FE 10 = 43.50 volts, same codage as already explained.
+
+After this command wait until the rectifier log off.
+You will see the output voltage going to the new default value, in my case 43,50V
+Then power it off.
+
+That's all. The mod is permanent.
+
+I do this with no load on the output (No battery).
+
+P.S. There was a wrong value on the doc I previously received.
+Last edited by planetaire on Oct 26 2015 4:02pm, edited 1 time in total.
+Top
+
+
+
+
+
+Some more info about the Flatpack communication protocol. This works for both a Flatpack 2 HE and a Flatpack S
+
+0x05014400
+During walk-in (the period where the voltage builds up slowly) the rectifier periodically (every 10 seconds or so) sends out the following message when it's not logged in :
+05014400 is the identifier and the serial number is the message followed by 00 00
+Walk in can be chosen to be either 5 seconds long or 60 seconds long. For charging my Zero I have opted for the 60 second walkin. It helps current spike when plugging in.
+
+So in case of of my rectifier (ser nr 141471110820) it is
+0x05014400 0x14 0x14 0x71 0x11 0x08 0x20 0x00 0x00 (all HEX numbers)
+
+If you respond ONCE with 0x05004804 0x14 0x14 0x71 0x11 0x08 0x20 0x00 0x00 (serial number + 2 bytes 00) the rectifier sends out exactly 64 messages with the status every 0,2 seconds (or so) before reverting to sending 0x05014400 again every 10 seconds without status messages. If you send the same 0x05004804 again before those 64 messages are up, the rectifier sends out another 64 messages. So in summary, if you send the response command at least every 10 seconds the rectifier stays logged in and keeps sending status messages.
+
+the status messages are (like described earlier in the thread) :
+0x05014010 AA BB CC DD EE FF GG HH where
+AA is the intake temperature in Celcius
+BB is the output current Low Byte
+CC is the output current High Byte. the current high and low byte combined give the current in deci amps (* 0.1 Amp)
+DD is the output voltage Low byte
+EE is the output voltage High Byte. the voltage high and low byte combined give the voltage in centivolts (* 0.01 Volt)
+FF is the input voltage Low Byte
+GG is the input voltage High Byte. the input voltage high and low byte combined gives the AC input voltage in volts
+HH is the output temperature in Celcius
+
+after the walk in period is reached the status messages change to :
+0x05014004 AA BB CC DD EE FF GG HH when the rectifier is in normal (Constant voltage) mode
+0x05014008 AA BB CC DD EE FF GG HH when the rectifier is in Constant Current mode (current-limiting)
+0x0501400C AA BB CC DD EE FF GG HH when the input voltage is low (mains plug pulled)
+
+however, during this stage every 10th message is different. The rectifier sends out a message :
+0x0500NNPP 1B JJ KK LL MM NN PP 00
+NN and PP are the last 2 bytes of the serial number. This has stumped me during diagnostics. I had my code perfect for 1 rectifier and the other was different. Unit i had the messages from 3 rectifiers and i saw the common link :)
+The 1B as the first byte of the message is sometimes a 1C (don't know why).
+I believe this is a request from the rectifier to keep being "logged in"
+
+So in short
+when the identifier starts with 0x0500 you have to reply with serial number which is containd in the message (do keep in mind that with a 0x05004400 the serial number is the first 6 bytes of the message and with 0x0500NNPP the serial number is the second till the seventh byte (shifted 1 byte)
+
+when the identifier starts with 0x0501 it's a status message (and even the identifier shows different statuses)
+
+All the above is just to keep being logged in and receive status messages.
+There are (as explained earlier in the thread also ways to control the rectifier)
+
+If it has send a message 0x05004400 or 0x0500NNPP (NNPP last 2 bytes of serial number) you can respond with a message to alter the voltage and even the maximum current setting.
+First you have to send a response 0x05004804 with the serial number as message (just to keep it logged in)
+Second you send the message
+0x05FF4004 AA BB CC DD EE FF GG HH where
+AA is the max current Low Byte
+BB is the max current High Byte
+CC is the voltage measured Low Byte (set it the same as the desired voltage Low byte)
+DD is the voltage measured High Byte (set it the same as the desired voltage High byte)
+EE is the desired voltage Low byte
+FF is the desired voltage High byte
+GG is the over voltage protection Low byte
+HH is the over voltage protection High byte
+
+example
+If i send 0x05FF4004 0x64 0x00 0x44 0x16 0x44 0x16 0x3E 0x17
+it sets the max current to 10.0 amps (0064 in HEX is 100 is 10.0 Amps)
+it sets the voltage output to 57.0 Volts (1644 in Hex is 5700 is 57.00 Volts)
+it sets the over voltage protection limit to 59.5 Volt (173E in Hex is 5950 is 59.50 Volts)
+
+I Think the rectifier remembers this setting as long as it's logged in, so in theory you would only have to send this command once (but keep sending the log in command periodically (0x05004804 with the serial number)
+
+The 0x05FF4004 is for a 5 second walk in period (after 5 seconds the output voltage reaches it's goal
+if you substitute this with 0x05FF4005 (last 4 change to a 5) the walk in period will be 60 seconds. This is stored in non volatile memory and is active from that moment on every time you switch on the rectifier.
+
+I send the command for the max current and output voltage every time I see a log in request (identifier starts with 0x0500) As said this probably is not necessary but I do switch the canbus to another rectifier sometimes so I have to send it more often.
+
+Also keep in mind that if the rectifier loses contact with the controller (i.e. you don't send any answers) the rectifier will revert to it's original settings (default voltage and maximum current)
+
+For those interested I have changed the code on my arduino as follows. It has automatic serial number detection and status message decoding. I've optimised it as far as possible with my average programming skills but is does the job I want it to do. It has an LCD for showing the message (2x16 characters), it shows any unknown identifier and message (which i have not seen yet), and has a pushbutton to control the maximum current. It sets it initially to 10.0 amps and with every push of the button it adds another 10 Amps. After it has reached 40 Amps and you push the button again it reverts back to 10.0 Amps. The display shows the chosen current output.
+
+
+
+
+The procedure for permanent default voltage change is :
+You have to have a connection to the CAN-bus (obviously)
+if the serial number of your unit is 123456789012
+
+send 0x05004804 0x12 0x34 0x56 0x78 0x90 0x12 0x00 0x00 (to log in to the rectifier)
+send 0x05009C00 0x29 0x15 0x00 0x80 0x16 (to set the permanent default voltage) EDITED !!!!!
+
+After about 10 seconds or so the output voltage should change to the new default voltage.
+Now wait 30 seconds and disconnect the power to the rectifier.
+When you start up again the voltage will default to (in the example) 57.5 Volt. The default voltage is determined by the last 2 bytes of the second command. Multiply your desired voltage with 100 (57.50 => 5750). Convert this number to HEX values (5700 => 0x1680). switch the two bytes (0x1680 => 0x80 0x16) and you have your code for setting the voltage
+
+For permanent current setting I have no procedure.
+It could very well be a command similar as to change the permanent voltage but I have no knowledge about that. I also have no "spare" Flatpack to experiment with.
+
+In my post above (with the latest arduino code) I respond to the rectifier's questions which is the elegant way of communicating
+I THINK confirmed that it is also possible to just send the current and voltage command every few seconds and that the rectifier understands it and acts accordingly, but you have to keep sending those 2 messages otherwise the rectifier defaults to his default output voltage and maximum current.
+
+To set the current control (and also voltage) message
+Send the following 2 messages at least every 10 seconds (5 or less seconds may be better)
+if the serial number of your unit is 123456789012
+
+send 0x05004804 0x12 0x34 0x56 0x78 0x90 0x12 0x00 0x00 (to log in to the rectifier)
+send 0x05FF4004 0x64 0x00 0x80 0x16 0x80 0x16 0x3E 0x17 (to set the current, the voltage and the over voltage protection)
+
+Current is the first two bytes of the second message (0x64 0x00). Switch the 2 bytes (=> 0x00 0x64 = 0x0064). convert to decimal (0x0064 => 100). divide by 10 (not 100) and you get 10.0 Amps.
+If you would want 28.6 Amps you invert the procedure : multiply by 10 (= 286), convert to HEX (0x011E), switch first and second byte (0x1E 0x01) and you have your desired current.
+The voltage is the 3rd and 4th byte of the second message (same procedure but division/multiplication by 100). 0x80 0x16 would give 57.50 Volts
+The 5th and 6th byte should be the same as the 3rd and 4th byte respectively (so also 0x80 0x16)
+The 7th and 8th byte are the over voltage protection limit. With 17 and 3E in the example it is set at 59.50 Volts (same calculation as output voltage)
+
+For the circuit I used a buildcircuit LCD DIY Kit together with a 5V CAN-bus board and a 75V to 5V DCDC converter to power the circuit.
+http://www.mikroe.com/click/can-spi-5v/
+http://www.buildcircuit.com/serial-lcd- ... lfdiy-kit/
+
+Easiest would be to use an arduino UNO with a CANbus shield, but that ends up a little bulky. You would have a super compact high power rectifier and a CANbus controller half the size of 1 flatpack S :D
+I'm now looking into finding a very small microcontroller board with CAN-bus interface and see if I can fit it inside the Flatpack S. That would be the ultimate solution. Either that or find the command for permanent current limit change :wink:
+
+maybe this one is worth looking into. it looks quite small
+http://www.hobbytronics.co.uk/leonardo-canbus
+
+!!!! a word of caution when you use multiple flatpacks in series!!!. The Can-bus is referenced to the negative DC output. So you cannot connect to both can-busses of two flatpacks in series or you will destroy the canbus controller on the flatpack. But for current control that is not necessary. Only connect 1 flatpack to the can-bus and that rectifier will determine the current.
+
+
+
+
+
+Use this with the eltek PSU's to program them:
+https://www.hobbytronics.co.uk/leonardo-canbus
+Use arduinoProgrammer5 with it.
+
+This is how to connect it to the flatpack :
+1. solder a twisted pair to the CANL and CANH solder pads on the right side of the board. There are screw terminals supplied in the kit but to keep the board low profile I chose to solder the CAN wires directly onto the board.
+2. make a bridge on the TERM solder connections to terminate the RS-485 with 120 Ohms. The 2 TERM solder pads are on the mini-USB side of the board.
+3. connect the other side of the can bus wires to the canbus on the flatpack
+3. Install the arduino software (available for free from Arduino.cc)
+4. Connect the leonardo CANbus board with a USB to mini-USB cable
+5. Copy paste the code into a (arduino) sketch.
+5a. At the top of the sketch there a 5 lines of code to set the : current limit, output voltage, overprotection voltage,5 or 60 seconds walk-in and the step the current limit takes as you push a pushbutton connected to D11 and GND. Change these as you see fit.
+6. Select the appropriate settings in the arduino program (board : leonardo)
+7. activate the serial monitor at 115200 baud in the arduino program
+8. hit the upload button (to upload the code into the can board)
+9. The LED on the board lights up every time a message is received or transmitted
+10. The serial monitor shows all received and transmitted data and gives an explanation of what is sent or received
+11. build the board into the flatpack
+12. enjoy a adjustable voltage (43.5 - 57.6 Volt) and adjustable current limited (0-41.7 Amps for the flatpack 2HE, 0-37.5 Amps for the Flatpack S) powersupply
+13. if you connect a pushbutton switch to D11 and GND the current is adjustable in steps of 10 Amps
+
+OLED display version to follow :)
+Also to follow is whether the 12V from the fan can be used to power the board, this way it can act fully stand-alone, but you can monitor it through the mini-usb. Now it is powered through the usb.
+
+
+
+
+Set output voltage permanently:
+unsigned char setdefaultvolt[5] = {0x29, 0x15, 0x00, 0x88, 0x13}; //this is the command for setting the default output voltage 50v (0x1388 = 5000 Last two bytes, LSB first). 80 16 is the maximum voltage of 57.6 V
+CAN.sendMsgBuf(0x05019C00, 1, 5, setdefaultvolt); //send message to set ouput voltage to all chargers connected to the CAN-bus
+
+That is what i've used to program the Flatpack
+
+The code only sends the command once. After 12 seconds the flatpack will change to 50.0 Volt. Disconnect the power to the flatpack. wait a minute or so and switch it back on. It should be at 50 Volts from then on.
+
+
+
+
+Set power up time:
+For 60 seconds walkin instead of 5 seconds use : CAN.sendMsgBuf(0x05004805, 1, 8, login);
+when loging in (4805 insted of 4804)
+
+
+
+
+
+
+I have a 48VDC flatpack 2 HE 2000W version with Arduino and CANBUS shield. I have used the info in this forum to log in and control the rectifier to some degree. I have figured out how to get additional status info. If the rectifier sends
+
+CanID 0x05014004 + (Status data as previously described) then it is operating normally
+
+CanID 0x05014008 + (Status data as previously described) then it has a warning - remmie got this when in current limit mode which is a warning.
+
+CanID 0x0501400C + (Status data as previously described) then it has an alarm. remmie got this when mains failed which is an alarm.
+
+CanID 0x05014010 + (Status data as previously described) then it is in Walk in mode (as previously described).
+
+If you then send the rectifier
+
+CanID 0x0501BFFC + data 0x08, 0x04, 0x00,
+
+it will send you back
+
+CanID 0x0501BFFC + data 0x0E, 0x04, 0x00, 0xYY, 0xZZ, 0x00, 0x00
+where each bit of YY relates to the following WARNINGS
+80 = Current limit
+40 = low temp
+20 = High temp
+10 = Low Mains
+08 = High Mains
+04 = Mod Fail Secondary
+02 = Mod Fail Primary
+01 = OVS Lock Out
+and each bit of the of ZZ relates to the following WARNINGS
+80 = Inner Volt
+40 = Fan3 Speed low
+20 = Sub Mod1 fail
+10 = Fan2 Speed low
+08 = Fan1 Speed low
+04 = Mod Fail Secondary
+02 = Module fail
+01 = Internal Voltage
+
+if you send CanID 0x0501BFFC + data 0x08, 0x08, 0x00
+
+it will send you back
+
+CanID 0x0501BFFC + data 0x0E, 0x08, 0x00, 0xYY, 0xZZ, 0x00, 0x00
+
+where each bit of YY relates to the following ALARMS
+80 = Current limit
+40 = low temp
+20 = High temp
+10 = Low Mains
+08 = High Mains
+04 = Mod Fail Secondary
+02 = Mod Fail Primary
+01 = OVS Lock Out
+and each bit of ZZ relates to the following ALARMS
+80 = Inner Volt
+40 = Fan3 Speed low
+20 = Sub Mod1 fail
+10 = Fan2 Speed low
+08 = Fan1 Speed low
+04 = Mod Fail Secondary
+02 = Module fail
+01 = Internal Voltage
+
+I don't think all the warnings and alarms are relevant to all rectifiers but it will help you to find out what is going on if the rectifier sends you a CanID 0x05014008 or 0x0501400C.
+
+I have also found ways to get other status info like firmware versions, max current, max voltage, converter part number, converter type etc but these are not that interesting. 
+
+
+
+
+t looks like the rectifier does not send the last two bytes of the serial number in the header but does something with it.
+the last two bytes of your serial number are 40 81. So in my code i assumed that when the rectifier sends : 05004081, it would require the controller to respond and log in. BUT, your rectifier sends 05000081 instead of 05004081. Therefore the code does not recognise it and sends it back as a unknown command.
+
+In the code, find the line where it says :
+else if(canId==(0x05000000+256*buf[5]+buf[6])) //if CANID = 0500xxyy where xxyy the last 2 digits of the serial nr
+
+and change it to :
+else if(canId==(0x05000000+buf[6])) //if CANID = 050000yy where yy is the last 2 digits of the serial nr
+
+That should work for your rectifier but for other serial numbers it may be different, for some it wil work for others not. that depends on what eltek has programmed. I would have to have a number of serial numbers and the responses of the rectifier to determine the precise formula the rectifier requires. It COULD be something like 0500xxyy and FFFFAFFF (this changes the '4' bit in the fifth byte to zero. In your serial number thatit would flip the 4 to a 0 resulting in returning 05000081 instead of 05004081
+
+you could off course also change it to :
+else if(canId==(0x05000081)) //if CANID = 05000081
+
+
+
+
+
+NodeMCU programmer:
+Pin usage:
+- I2C for the OLED: D1(SCL), D2(SDA), 3.3V & GND
+- Current selection: D3, D9, D10 & GND (only D9 can stay switched on GND during boot, otherwise the NodeMCU will not start)
+- SPI for the CAN Shield (MCP2515 with modification): D4(INT), D5(SCK), D6(MISO), D7(MOSI), D8(CS) + 5V for the Tranceiver, 3.3V for the SPI chip of the CAN & GND
+
+
+
+
+
+https://github.com/electricgod/eltek-arduino-programmer
+https://endless-sphere.com/forums/viewtopic.php?f=14&t=71139&hilit=eltek
+https://www.hobbytronics.co.uk/leonardo-canbus
+https://github.com/the6p4c/Flatpack2

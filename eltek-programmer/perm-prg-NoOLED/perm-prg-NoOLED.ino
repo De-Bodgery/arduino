@@ -48,10 +48,10 @@ MCP_CAN CAN(SPI_CS_PIN);                                                        
 
 void setup()                                                                        // Initialisation routine
 {
-  pinMode(23, OUTPUT);                                                                // Set pin 9 to output (backlight of the LCD)
-  digitalWrite(23, HIGH);                                                            // LED on
+  pinMode(23, OUTPUT);                                                              // Set pin 9 to output (backlight of the LCD)
+  digitalWrite(23, HIGH);                                                           // LED on
   delay(250);
-  digitalWrite(23, LOW);
+
 
 START_INIT:
 
@@ -68,9 +68,10 @@ START_INIT:
 
     unsigned char setdefaultvolt[5] = {0x2B, 0x15, 0x00, 0x80, 0x16};              // Set the default output voltage (Last two bytes, LSB first)
     CAN.sendMsgBuf(0x05009C02, 1, 5, setdefaultvolt);                              // Send message to set default output voltage
-digitalWrite(23, HIGH); 
+    digitalWrite(23, LOW);                                                         // LED off
+
 }
 
-void loop()                                                                        // main program (LOOP)
-{                                                                                  // nothing to do :)
+void loop()                                                                        // End main program (LOOP)
+{                                                                                  // End
 }

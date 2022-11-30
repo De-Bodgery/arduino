@@ -9,16 +9,23 @@
 // 6. Connect CANBUS from the programmer board to the PSU
 // 7. Power on programmer board
 
-// 00 10 should be 40.96 returned is 43.8 measured is 44.0
-// 00 11 should be 43.52 returned is 43.7 measured is 43.6
-// 00 12 should be 46.08 returned is 46.2 measured is 46.1
-// 00 13 should be 48.64 returned is 48.8 measured is 48.7
-// 00 14 should be 51.20 returned is 51.3 measured is 51.2
-// 00 15 should be 53.76 returned is 53.8 measured is 53.8
-// 00 16 should be 56.32 returned is 56.4 measured is 56.4
-// 80 16 should be 57.60 returned is 57.0 measured is 56.9
-// 00 17 should be 58.88 returned is 57.7 measured is 57.6
-// 00 18 should be 61.44 returned is 57.7 measured is 57.6
+// Voltage settings:
+// unsigned char setdefaultvolt[5] = {0x2B, 0x15, 0x00, 0x80, 0x16}
+// Last 2 segements are the voltage: 0x80, 0x16
+// 0x80, 0x10 = 40.96v returned is 43.8 measured is 44.0
+// 0x80, 0x11 = 43.52v returned is 43.7 measured is 43.6
+// 0x80, 0x12 = 46.08v returned is 46.2 measured is 46.1
+// 0x80, 0x13 = 48.64v returned is 48.8 measured is 48.7
+// 0x80, 0x14 = 51.20v returned is 51.3 measured is 51.2
+// 0x80, 0x15 = 53.76v returned is 53.8 measured is 53.8
+// 0x80, 0x16 = 56.32v returned is 56.4 measured is 56.4
+// 0x80, 0x16 = 57.60v returned is 57.0 measured is 56.9
+// 0x80, 0x17 = 58.88v returned is 57.7 measured is 57.6
+// 0x80, 0x18 = 61.44v returned is 57.7 measured is 57.6
+ 
+// 57.6v = 0x80, 0x16 (highest possible voltage)
+// 53.5v = 0x14, 0xE6 (factory default voltage)
+// 43.5v = 0x10, 0xFE (lowest possible voltage) 
 
 // After about 10 seconds or so the output voltage should change to the new default voltage.
 // Now wait 30 seconds and disconnect the power to the rectifier. 
@@ -56,22 +63,14 @@ START_INIT:
     delay(100);
     goto START_INIT;
     }
-    unsigned char login[8] = {0x15, 0x12, 0x72, 0x00, 0x08, 0x46, 0x00, 0x00};     //this is the serial number of the Flatpack + 2 added bytes of 00 each)
-    CAN.sendMsgBuf(0x05004804, 1, 8, login);                                       //send message to log in and assign ID=1 (last 04 means ID=1, for ID=2 use 05004808 ) 
+    unsigned char login[8] = {0x15, 0x12, 0x72, 0x00, 0x08, 0x46, 0x00, 0x00};     // Flatpack SN + 2 added bytes of 00 each)
+    CAN.sendMsgBuf(0x05004804, 1, 8, login);                                       // Log in and assign ID=1 (last 04 means ID=1, for ID=2 use 05004808 ) 
 
-    unsigned char setdefaultvolt[5] = {0x2B, 0x15, 0x00, 0x80, 0x16};              //this is the command for setting the default output voltage (Last two bytes, LSB first). 16 80 is the maximum voltage of 57.6 V
-    CAN.sendMsgBuf(0x05009C02, 1, 5, setdefaultvolt);                              //send message to set ouput voltage to all Flatpacks connected to the CAN-bus
+    unsigned char setdefaultvolt[5] = {0x2B, 0x15, 0x00, 0x80, 0x16};              // Set the default output voltage (Last two bytes, LSB first)
+    CAN.sendMsgBuf(0x05009C02, 1, 5, setdefaultvolt);                              // Send message to set default output voltage
 digitalWrite(23, HIGH); 
 }
 
 void loop()                                                                        // main program (LOOP)
 {                                                                                  // nothing to do :)
 }
-
-/*********************************************************************************************************
-  END FILE
-  Voltage settings 
-  80 16 => 1680 HEX = 57,60 Volt (= highest possible voltage
-  E6 14 => 14E6 HEX = 53,50 Volt (= factory set voltage)
-  FE 10 => 10FE HEX = 43,50 Volt (= lowest possible voltage)  
-*********************************************************************************************************/
